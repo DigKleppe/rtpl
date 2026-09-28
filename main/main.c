@@ -154,6 +154,9 @@ static void i2s_echo(void *args)
     size_t bytes_write = 0;
     ESP_LOGI(TAG, "[echo] Echo start");
 
+
+    ESP_RETURN_ON_ERROR(es8311_microphone_gain_set(es_handle, EXAMPLE_MIC_GAIN), TAG, "set es8311 microphone gain failed");
+
     while (1) {
         memset(mic_data, 0, EXAMPLE_RECV_BUF_SIZE);
 #if CONFIG_EXAMPLE_BSP && CONFIG_IDF_TARGET_ESP32P4
