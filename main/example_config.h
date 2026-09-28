@@ -60,7 +60,10 @@
 #endif
 
 #else // CONFIG_EXAMPLE_BSP
-#include "bsp/esp-bsp.h"
+
+//#include "bsp/esp-bsp.h"
+#endif // CONFIG_EXAMPLE_BSP
+
 #define I2C_NUM BSP_I2C_NUM
 
-#endif // CONFIG_EXAMPLE_BSP
+

@@ -12,7 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+//#include "driver/i2c.h"
 #include "driver/i2s_std.h"
 #include "esp_system.h"
 #include "esp_check.h"
@@ -21,6 +21,7 @@
 #include "eth.h"
 #define CONFIG_EXAMPLE_BSP 1
 #define CONFIG_IDF_TARGET_ESP32P4 1 
+#undef CONFIG_EXAMPLE_MODE_MUSIC
 
 #include "bsp/esp-bsp.h"
 #include "esp_codec_dev.h"
@@ -30,15 +31,12 @@ static const char *TAG = "i2s_es8311";
 static const char err_reason[][30] = {"input param is invalid",
                                       "operation timeout"
                                      };
-#if !(CONFIG_EXAMPLE_BSP && CONFIG_IDF_TARGET_ESP32P4)
-static i2s_chan_handle_t tx_handle = NULL;
-static i2s_chan_handle_t rx_handle = NULL;
-#else
+
 static esp_codec_dev_handle_t s_play_dev;
 static esp_codec_dev_handle_t s_record_dev;
 static bool s_play_opened;
 static bool s_record_opened;
-#endif
+
 
 /* Import music file as buffer */
 #if CONFIG_EXAMPLE_MODE_MUSIC
@@ -155,7 +153,7 @@ static void i2s_echo(void *args)
     ESP_LOGI(TAG, "[echo] Echo start");
 
 
-    ESP_RETURN_ON_ERROR(es8311_microphone_gain_set(es_handle, EXAMPLE_MIC_GAIN), TAG, "set es8311 microphone gain failed");
+ // ESP_RETURN_ON_ERROR(es8311_microphone_gain_set(es_handle, EXAMPLE_MIC_GAIN), TAG, "set es8311 microphone gain failed");
 
     while (1) {
         memset(mic_data, 0, EXAMPLE_RECV_BUF_SIZE);

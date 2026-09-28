@@ -1,0 +1,5 @@
+set(COMPONENT_SRCDIRS ".")
+set(COMPONENT_ADD_INCLUDEDIRS ".")
+set(COMPONENT_PRIV_REQUIRES  esp_event esp_ringbuf esp_netif) ## spiffs esp_http_server esp_http_client esp-tls vfs")
+#set(COMPONENT_EMBED_FILES "favicon.ico")
+register_component()
