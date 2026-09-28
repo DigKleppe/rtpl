@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.5)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+get_filename_component(ProjectId ${CMAKE_CURRENT_LIST_DIR} NAME)
+string(REPLACE " " "_" ProjectId ${ProjectId})
+set(PROJECT_VER "1.0.0.0")
+#set (target_compile_definitions(${ProjectId} PUBLIC "LV_LVGL_H_INCLUDE_SIMPLE=2"))
+project(${ProjectId})
+idf_build_set_property(COMPILE_OPTIONS "-Wno-error" APPEND)
+idf_build_set_property(COMPILE_OPTIONS "-DLV_LVGL_H_INCLUDE_SIMPLE" APPEND)
+# "Trim" the build. Include the minimal set of components, main, and anything it depends on.
+idf_build_set_property(MINIMAL_BUILD ON)
