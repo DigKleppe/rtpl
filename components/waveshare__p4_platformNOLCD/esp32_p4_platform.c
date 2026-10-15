@@ -7,7 +7,7 @@
 #include "esp_idf_version.h"
 #include "esp_spiffs.h"
 #include "esp_vfs_fat.h"
-#include "usb/usb_host.h"
+//#include "usb/usb_host.h"
 #include "sd_pwr_ctrl_by_on_chip_ldo.h"
 
 
@@ -182,7 +182,8 @@ esp_err_t bsp_audio_init(const i2s_std_config_t *i2s_config)
     ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &i2s_tx_chan, &i2s_rx_chan));
 
     /* Setup I2S channels */
-    const i2s_std_config_t std_cfg_default = BSP_I2S_DUPLEX_MONO_CFG(22050);
+  //  const i2s_std_config_t std_cfg_default = BSP_I2S_DUPLEX_MONO_CFG(22050);
+    const i2s_std_config_t std_cfg_default = BSP_I2S_DUPLEX_MONO_CFG(44100);
     const i2s_std_config_t *p_i2s_cfg = &std_cfg_default;
     if (i2s_config != NULL)
     {
@@ -312,52 +313,51 @@ esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
     return esp_codec_dev_new(&codec_es8311_dev_cfg);
 }
 
+// static void usb_lib_task(void *arg)
+// {
+//     while (1)
+//     {
+//         // Start handling system events
+//         uint32_t event_flags;
+//         usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
+//         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS)
+//         {
+//             ESP_ERROR_CHECK(usb_host_device_free_all());
+//         }
+//         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE)
+//         {
+//             ESP_LOGI(TAG, "USB: All devices freed");
+//         }
+//     }
+// }
 
-static void usb_lib_task(void *arg)
-{
-    while (1)
-    {
-        // Start handling system events
-        uint32_t event_flags;
-        usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
-        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS)
-        {
-            ESP_ERROR_CHECK(usb_host_device_free_all());
-        }
-        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE)
-        {
-            ESP_LOGI(TAG, "USB: All devices freed");
-        }
-    }
-}
+// esp_err_t bsp_usb_host_start(bsp_usb_host_power_mode_t mode, bool limit_500mA)
+// {
+//     // Install USB Host driver. Should only be called once in entire application
+//     ESP_LOGI(TAG, "Installing USB Host");
+//     const usb_host_config_t host_config = {
+//         .skip_phy_setup = false,
+//         .intr_flags = ESP_INTR_FLAG_LEVEL1,
+//     };
+//     BSP_ERROR_CHECK_RETURN_ERR(usb_host_install(&host_config));
 
-esp_err_t bsp_usb_host_start(bsp_usb_host_power_mode_t mode, bool limit_500mA)
-{
-    // Install USB Host driver. Should only be called once in entire application
-    ESP_LOGI(TAG, "Installing USB Host");
-    const usb_host_config_t host_config = {
-        .skip_phy_setup = false,
-        .intr_flags = ESP_INTR_FLAG_LEVEL1,
-    };
-    BSP_ERROR_CHECK_RETURN_ERR(usb_host_install(&host_config));
+//     // Create a task that will handle USB library events
+//     if (xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 10, &usb_host_task) != pdTRUE)
+//     {
+//         ESP_LOGE(TAG, "Creating USB host lib task failed");
+//         abort();
+//     }
 
-    // Create a task that will handle USB library events
-    if (xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 10, &usb_host_task) != pdTRUE)
-    {
-        ESP_LOGE(TAG, "Creating USB host lib task failed");
-        abort();
-    }
+//     return ESP_OK;
+// }
 
-    return ESP_OK;
-}
-
-esp_err_t bsp_usb_host_stop(void)
-{
-    usb_host_uninstall();
-    if (usb_host_task)
-    {
-        vTaskSuspend(usb_host_task);
-        vTaskDelete(usb_host_task);
-    }
-    return ESP_OK;
-}
+// esp_err_t bsp_usb_host_stop(void)
+// {
+//     usb_host_uninstall();
+//     if (usb_host_task)
+//     {
+//         vTaskSuspend(usb_host_task);
+//         vTaskDelete(usb_host_task);
+//     }
+//     return ESP_OK;
+// }

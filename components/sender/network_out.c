@@ -3,6 +3,8 @@
 // #include "global.h"
 
 #include "esp_event.h"
+
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
 #include "esp_netif.h"	 // For IP address functions
 #include "esp_rom_sys.h" // For ets_delay_us
@@ -22,6 +24,9 @@
 #include <lwip/netdb.h>
 #include <math.h>
 #include <string.h>
+
+#include "../../main/example_config.h"
+
 // #include "config/config_manager.h"  // For device_mode_t enum
 
 // PCM bytes per chunk (from Kconfig to keep single source of truth)
@@ -31,10 +36,12 @@
 #define NETWORK_PACKET_RECEIVED_BIT BIT0
 extern EventGroupHandle_t s_network_activity_event_group;
 
+extern RingbufHandle_t pcmBuffer;
+
 
 #define lifecycle_get_sender_destination_ip() "192.168.2.2" // PC
-#define lifecycle_get_sender_destination_port() 5000
-#define lifecycle_get_sample_rate() 48000
+#define lifecycle_get_sender_destination_port() 5006  // test , 
+#define lifecycle_get_sample_rate() 16000 // 44100
 #define lifecycle_get_bit_depth() 16
 #define SENDVOLUME 1.0
 
@@ -61,12 +68,13 @@ typedef struct __attribute__((packed)) {
 
 // RTP constants
 #define RTP_VERSION 2
-#define RTP_PAYLOAD_TYPE 127				 // Dynamic payload type for L16/48000/2
+#define RTP_PAYLOAD_TYPE  96 //  127				 // Dynamic payload type for L16/48000/2
 #define RTP_HEADER_SIZE sizeof(rtp_header_t) // Use struct size for consistency
 // RTP timestamp increments by samples PER CHANNEL for L16 stereo
 // 1152 bytes / 4 bytes per stereo sample pair = 288 stereo samples
 // Each channel gets 288 samples, so timestamp increments by 288
-#define RTP_TIMESTAMP_INC 288 // Samples per channel per packet at 48kHz
+
+#define RTP_TIMESTAMP_INC 288 * 2  // mono Samples per channel 
 
 // SAP constants
 #define SAP_MULTICAST_ADDR CONFIG_SAP_MULTICAST_ADDR
@@ -83,13 +91,14 @@ typedef struct __attribute__((packed)) {
 #if defined(CONFIG_USB_IN_CHUNK_SIZE)
 _Static_assert(CONFIG_USB_IN_CHUNK_SIZE == PCM_CHUNK_SIZE, "USB PCM chunk size must match RTP chunk size");
 #endif
-
+#define SENDINTERVAL ((1000 * 1000 * CHUNK_SIZE / 2 ) / EXAMPLE_SAMPLE_RATE); 
 
 //  #define lifecycle_get_device_mode ()
 // Socket options
 #define UDP_TX_BUFFER_SIZE (PCM_CHUNK_SIZE * 4)
 #define UDP_SEND_TIMEOUT_MS 100
 #define MAX_SEND_RETRIES 3
+
 
 // State variables
 static bool s_is_sender_initialized = false;
@@ -157,122 +166,6 @@ static void build_rtp_packet(uint8_t *packet, const uint8_t *audio_data, size_t 
 	}
 }
 
-static int generate_sdp_message(char *sdp_buffer, size_t buffer_size) {
-	// Get current timestamp for session ID
-	uint32_t session_id = (uint32_t)esp_timer_get_time();
-
-	// Get local IP address
-	esp_netif_ip_info_t ip_info;
-	esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-	if (netif == NULL) {
-		ESP_LOGE(TAG, "Failed to get network interface");
-		return -1;
-	}
-	esp_netif_get_ip_info(netif, &ip_info);
-	snprintf(s_local_ip, sizeof(s_local_ip), IPSTR, IP2STR(&ip_info.ip));
-
-	// Get destination from lifecycle manager
-	const char *dest_ip = lifecycle_get_sender_destination_ip();
-	uint16_t dest_port = lifecycle_get_sender_destination_port();
-
-	// Generate SDP
-	int len = snprintf(sdp_buffer, buffer_size,
-					   "v=0\r\n"
-					   "o=- %lu %lu IN IP4 %s\r\n"
-					   "s=%s\r\n"
-					   "i=48kHz 16-bit Stereo Audio from %s\r\n"
-					   "c=IN IP4 %s\r\n"
-					   "t=0 0\r\n"
-					   "a=recvonly\r\n"
-					   "m=audio %u RTP/AVP %d\r\n"
-					   "a=rtpmap:%d L16/48000/2\r\n"
-					   "a=ptime:6\r\n",
-					   session_id, session_id, s_local_ip, s_device_name, s_device_name, dest_ip, dest_port, RTP_PAYLOAD_TYPE, RTP_PAYLOAD_TYPE);
-
-	return len;
-}
-static void sap_announcement_tick(void) {
-	if (!s_is_sender_running || s_sap_sock < 0) {
-		return;
-	}
-
-	uint64_t now_us = esp_timer_get_time();
-	if (s_next_sap_announce_us != 0 && now_us < s_next_sap_announce_us) {
-		return;
-	}
-
-	char sdp_buffer[512];
-	uint8_t sap_packet[600];
-	sap_header_t *sap_header = (sap_header_t *)sap_packet;
-
-	// Prepare SAP header for this announcement
-	sap_header->flags = 0x20; // V=1, no authentication, IPv4
-	sap_header->auth_len = 0;
-	sap_header->msg_id_hash = htons((uint16_t)(s_rtp_ssrc & 0xFFFF));
-
-	esp_netif_ip_info_t ip_info;
-	esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-	if (netif != NULL) {
-		esp_netif_get_ip_info(netif, &ip_info);
-		sap_header->origin_src = ip_info.ip.addr;
-	} else {
-		sap_header->origin_src = inet_addr(s_local_ip);
-	}
-
-	// Generate SDP content
-	int sdp_len = generate_sdp_message(sdp_buffer, sizeof(sdp_buffer));
-	if (sdp_len < 0 || sdp_len >= (int)sizeof(sdp_buffer)) {
-		ESP_LOGE(TAG, "Failed to generate SDP message or message too large");
-		s_next_sap_announce_us = now_us + 5000000ULL;
-		return;
-	}
-
-	const char *mime_type = "application/sdp";
-	size_t mime_len = strlen(mime_type);
-
-	// Calculate required size and validate bounds before copying
-	size_t required_size = sizeof(sap_header_t) + mime_len + 1 + (size_t)sdp_len;
-	if (required_size > sizeof(sap_packet)) {
-		ESP_LOGE(TAG, "SAP packet too large (%zu bytes > %zu), skipping", required_size, sizeof(sap_packet));
-		s_next_sap_announce_us = now_us + 5000000ULL;
-		return;
-	}
-
-	char *payload_ptr = (char *)(sap_packet + sizeof(sap_header_t));
-	size_t remaining_space = sizeof(sap_packet) - sizeof(sap_header_t);
-
-	// Copy MIME type
-	if (mime_len >= remaining_space) {
-		ESP_LOGE(TAG, "MIME type too long, skipping");
-		s_next_sap_announce_us = now_us + 5000000ULL;
-		return;
-	}
-	memcpy(payload_ptr, mime_type, mime_len);
-	payload_ptr[mime_len] = '\0';
-	remaining_space -= (mime_len + 1);
-
-	// Copy SDP payload
-	if ((size_t)sdp_len > remaining_space) {
-		ESP_LOGE(TAG, "SDP content too long, skipping");
-		s_next_sap_announce_us = now_us + 5000000ULL;
-		return;
-	}
-	memcpy(payload_ptr + mime_len + 1, sdp_buffer, (size_t)sdp_len);
-
-	size_t packet_size = required_size;
-
-	int sent = sendto(s_sap_sock, sap_packet, packet_size, 0, (struct sockaddr *)&s_sap_addr, sizeof(s_sap_addr));
-
-	if (sent < 0) {
-		ESP_LOGW(TAG, "Failed to send SAP announcement: errno %d", errno);
-		s_next_sap_announce_us = now_us + 5000000ULL;
-		return;
-	}
-
-	ESP_LOGD(TAG, "Sent SAP announcement (%d bytes)", sent);
-	s_next_sap_announce_us = now_us + (uint64_t)SAP_ANNOUNCE_INTERVAL_MS * 1000ULL;
-}
-
 static void rtp_sender_task(void *arg);
 
 esp_err_t rtp_sender_init(void) {
@@ -309,29 +202,29 @@ esp_err_t rtp_sender_init(void) {
 	}
 #endif
 
-	// Initialize SAP socket for announcements
-	ESP_LOGI(TAG, "Initializing SAP socket for announcements");
-	s_sap_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-	if (s_sap_sock < 0) {
-		ESP_LOGE(TAG, "Unable to create SAP socket: errno %d", errno);
-		close(s_sock);
-		s_sock = -1;
-		return ESP_FAIL;
-	}
+	// // Initialize SAP socket for announcements
+	// ESP_LOGI(TAG, "Initializing SAP socket for announcements");
+	// s_sap_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+	// if (s_sap_sock < 0) {
+	// 	ESP_LOGE(TAG, "Unable to create SAP socket: errno %d", errno);
+	// 	close(s_sock);
+	// 	s_sock = -1;
+	// 	return ESP_FAIL;
+	// }
 
-	// Configure SAP multicast address
-	memset(&s_sap_addr, 0, sizeof(s_sap_addr));
-	s_sap_addr.sin_family = AF_INET;
-	s_sap_addr.sin_addr.s_addr = inet_addr(SAP_MULTICAST_ADDR);
-	s_sap_addr.sin_port = htons(SAP_PORT);
+	// // Configure SAP multicast address
+	// memset(&s_sap_addr, 0, sizeof(s_sap_addr));
+	// s_sap_addr.sin_family = AF_INET;
+	// s_sap_addr.sin_addr.s_addr = inet_addr(SAP_MULTICAST_ADDR);
+	// s_sap_addr.sin_port = htons(SAP_PORT);
 
-	// Set multicast TTL for SAP
-	uint8_t ttl = 15; // Reasonable TTL for local network
-	if (setsockopt(s_sap_sock, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
-		ESP_LOGW(TAG, "Failed to set SAP multicast TTL: errno %d", errno);
-	}
+	// // Set multicast TTL for SAP
+	// uint8_t ttl = 15; // Reasonable TTL for local network
+	// if (setsockopt(s_sap_sock, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
+	// 	ESP_LOGW(TAG, "Failed to set SAP multicast TTL: errno %d", errno);
+	// }
 
-	ESP_LOGI(TAG, "SAP socket configured for %s:%d", SAP_MULTICAST_ADDR, SAP_PORT);
+	// ESP_LOGI(TAG, "SAP socket configured for %s:%d", SAP_MULTICAST_ADDR, SAP_PORT);
 
 	// Initialize the destination address from lifecycle manager
 	const char *dest_ip = lifecycle_get_sender_destination_ip();
@@ -435,7 +328,6 @@ esp_err_t rtp_sender_stop(void) {
 
 bool rtp_sender_is_running(void) { return s_is_sender_running; }
 
-void rtp_sender_tick(void) { sap_announcement_tick(); }
 
 void rtp_sender_set_mute(bool mute) {
 	s_is_muted = mute;
@@ -572,6 +464,8 @@ static esp_err_t handle_multicast_membership(int sock, const char *multicast_ip,
 	return ESP_OK;
 }
 
+
+extern int udpBytes;
 static void rtp_sender_task(void *arg) {
 	static unsigned char rtp_packet[PACKET_SIZE];
 	char audio_buffer[CHUNK_SIZE];
@@ -585,10 +479,15 @@ static void rtp_sender_task(void *arg) {
 	// For pacing the sender to match the audio rate
 	// 1152 bytes = 288 stereo samples = 288/48000 = 6ms exactly
 	// Using esp_timer for more precise timing to avoid drift
-	int64_t next_send_time_us = esp_timer_get_time();
-	const int64_t send_interval_us = 6000; // 6ms in microseconds
 
-	RingbufHandle_t pcm_out_buffer = NULL;
+	//1152 bytes = 288 stereo samples = 288/44100 = 6.5306 
+	
+
+
+	int64_t next_send_time_us = esp_timer_get_time();
+	const int64_t send_interval_us = SENDINTERVAL; //6531; //6000; // 6ms in microseconds
+
+	RingbufHandle_t pcm_out_buffer = pcmBuffer;
 	// todo
 	// device_mode_t current_mode = lifecycle_get_device_mode();
 	// ESP_LOGI(TAG, "Waiting for ringbuf, mode: %d", current_mode);
@@ -605,6 +504,7 @@ static void rtp_sender_task(void *arg) {
 	// }
 
 	// ESP_LOGI(TAG, "Got ringbuf, mode: %d", current_mode);
+
 
 	while (s_is_sender_running) {
 		if (s_is_muted) {
@@ -644,6 +544,8 @@ static void rtp_sender_task(void *arg) {
 															  CHUNK_SIZE);
 			if (item == NULL) {
 				// No data yet; re-evaluate and let the pacing logic decide
+			//	ESP_LOGE(TAG, "No data!");	
+
 				vTaskDelay(pdMS_TO_TICKS(1));
 				ringbuf_empty = true;
 				next_send_time_us = esp_timer_get_time();
@@ -680,11 +582,15 @@ static void rtp_sender_task(void *arg) {
 		// If we have a full chunk, send it
 		if (bytes_in_buffer == CHUNK_SIZE) {
 			// Debug: Check for potential data corruption and timing every 1000 packets
+
 			static int packet_count = 0;
 			static int64_t last_packet_time_us = 0;
 			packet_count++;
+			udpBytes += CHUNK_SIZE;
 
-			if (packet_count % 1000 == 0) {
+		//	ESP_LOGI( TAG," sending chunk %d" ,packet_count );
+
+			if (packet_count % 100 == 0) {
 				int16_t *debug_samples = (int16_t *)audio_buffer;
 				int zero_count = 0;
 				int16_t max_val = 0;
@@ -706,9 +612,9 @@ static void rtp_sender_task(void *arg) {
 				last_packet_time_us = now_us;
 
 				// Also check first few samples for continuity
-				ESP_LOGD(TAG, "Audio stats: zeros=%d/%d, range=[%d,%d], packets=%d, interval=%lldms", zero_count, CHUNK_SIZE / 2, min_val, max_val,
+				ESP_LOGI(TAG, "Audio stats: zeros=%d/%d, range=[%d,%d], packets=%d, interval=%lldms", zero_count, CHUNK_SIZE / 2, min_val, max_val,
 						 packet_count, delta_us / 1000);
-				ESP_LOGD(TAG, "First samples: [%d, %d, %d, %d]", debug_samples[0], debug_samples[1], debug_samples[2], debug_samples[3]);
+				ESP_LOGI(TAG, "First samples: [%d, %d, %d, %d, %d, %d, %d, %d ,]", debug_samples[0], debug_samples[1], debug_samples[2], debug_samples[3], debug_samples[4], debug_samples[5], debug_samples[6], debug_samples[7]);
 			}
 
 			// Apply volume
@@ -724,9 +630,9 @@ static void rtp_sender_task(void *arg) {
 			// Feed PCM data to visualizer (after volume adjustment, before RTP packet construction)
 			// pcm_viz_write((const uint8_t*)audio_buffer, CHUNK_SIZE);
 
-			if (wav_streamer_is_ready()) {
-				wav_streamer_push((const uint8_t *)audio_buffer, CHUNK_SIZE);
-			}
+			// if (wav_streamer_is_ready()) {
+			// 	wav_streamer_push((const uint8_t *)audio_buffer, CHUNK_SIZE);
+			// }
 
 			// Build RTP packet
 			build_rtp_packet(rtp_packet, (uint8_t *)audio_buffer, CHUNK_SIZE);
@@ -756,6 +662,8 @@ static void rtp_sender_task(void *arg) {
 
 			// Only delay if we're not behind schedule
 			if (delay_us > 0) {
+			//	ESP_LOGI(TAG, "RTP sender delay %d",delay_us);
+
 				// Use busy wait for very short delays to maintain precision
 				if (delay_us < 1000) {
 					// Busy wait for sub-millisecond precision

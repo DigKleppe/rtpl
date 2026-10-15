@@ -18,6 +18,7 @@
 #include "sdkconfig.h"
 
 static const char *TAG = "eth";
+volatile bool gotIP;
 
 /** Event handler for Ethernet events */
 static void eth_event_handler(void *arg, esp_event_base_t event_base,
@@ -61,6 +62,7 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "ETHMASK:" IPSTR, IP2STR(&ip_info->netmask));
     ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
     ESP_LOGI(TAG, "~~~~~~~~~~~");
+    gotIP = true;
 }
 
 void initETH(void)
