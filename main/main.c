@@ -23,9 +23,11 @@
 #include "example_config.h"
 #include "network_out.h"
 
+#include <arpa/inet.h> // For htons, htonl, ntohs
+
 #include "udpServer.h"
 
-#define RINGBUFSIZE 44100
+#define RINGBUFSIZE UDPBUFSIZE * 4
 
 #include "eth.h"
 #define CONFIG_EXAMPLE_BSP 1
@@ -40,7 +42,7 @@
 #define UDPMAXLEN 2048
 
 static const char *TAG = "receiver";
-//static const char err_reason[][30] = {"input param is invalid", "operation timeout"};
+// static const char err_reason[][30] = {"input param is invalid", "operation timeout"};
 
 static esp_codec_dev_handle_t s_play_dev;
 static esp_codec_dev_handle_t s_record_dev;
@@ -122,6 +124,32 @@ void timerTask(void *p) {
 	};
 }
 
+// RTP header structure (12 bytes)
+typedef struct __attribute__((packed)) {
+	uint8_t vpxcc;		// Version(2), Padding(1), Extension(1), CSRC count(4)
+	uint8_t mpt;		// Marker(1), Payload Type(7)
+	uint16_t seq_num;	// Sequence number
+	uint32_t timestamp; // RTP timestamp
+	uint32_t ssrc;		// Synchronization source identifier
+} rtp_header_t;
+
+void rtpReceiveTask(void *p) {
+	size_t bytesRead;
+	rtp_header_t *rtpHeader;
+	while (1) {
+		uint8_t *item = (uint8_t *)xRingbufferReceiveUpTo(pcmBuffer, &bytesRead, pdMS_TO_TICKS(10), UDPBUFSIZE);
+		if (item) {
+			//	ESP_LOGI ( TAG, "bytes read %d", (int) bytesRead );
+			if (bytesRead) {
+				rtpHeader = (rtp_header_t *)item;
+				ESP_LOGI(TAG, "bytes: %d seqn %d  ts %ld:", (int)bytesRead, (int)htons(rtpHeader->seq_num), htonl(rtpHeader->timestamp));
+			}
+
+			vRingbufferReturnItem(pcmBuffer, (void *)item);
+		}
+	}
+}
+
 TaskHandle_t udpServerTaskh;
 
 void app_main(void) {
@@ -143,6 +171,7 @@ void app_main(void) {
 		const udpTaskParams_t udpTaskParams = {.port = UDPRECEIVEPORT, .ringBuf = pcmBuffer};
 		xTaskCreate(udpServerTask, "udpServerTask", 1024 * 2, (void *)&udpTaskParams, 5, &udpServerTaskh);
 	}
+	xTaskCreate(rtpReceiveTask, "rtpReceiveTask", 2000, NULL, 5, NULL);
 
 	//	xTaskCreate(timerTask, "timer", 2000, NULL, 5, NULL);
 	//	xTaskCreate(sendmusic, "rtp_sender", 8192, NULL, 5, NULL);
