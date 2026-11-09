@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 
-//ontvanger in testAudioRTP /mnt/linuxData/projecten/intercom
+// ontvanger in testAudioRTP /mnt/linuxData/projecten/intercom
 
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -16,31 +16,45 @@
 #include <stdlib.h>
 #include <string.h>
 // #include "driver/i2c.h"
-#include "driver/i2s_std.h"
+
 #include "esp_check.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "example_config.h"
+
 #include "network_out.h"
 
 #define RINGBUFSIZE 44100
 
+#define S3BOARD 1
+
+#ifndef S3BOARD
 #include "eth.h"
 #define CONFIG_EXAMPLE_BSP 1
 #define CONFIG_IDF_TARGET_ESP32P4 1
-#undef CONFIG_EXAMPLE_MODE_MUSIC
-
-#define MIC_GAIN 42// max 42 db ES8311_ADC_REG16
+#include "driver/i2s_std.h"
+#include "example_config.h"
 #include "bsp/esp-bsp.h"
 #include "esp_codec_dev.h"
+static esp_codec_dev_handle_t s_play_dev;
+static esp_codec_dev_handle_t s_record_dev;
+int es8311_set_ADCvolume(const audio_codec_if_t *h, uint8_t val);
+static const char err_reason[][30] = {"input param is invalid", "operation timeout"};
 
+#else
+void initWifi(void);
+
+#define EXAMPLE_SAMPLE_RATE 16000
+#endif
+
+#undef CONFIG_EXAMPLE_MODE_MUSIC
+
+#define MIC_GAIN 42 // max 42 db ES8311_ADC_REG16
 
 
 static const char *TAG = "i2s_es8311";
-static const char err_reason[][30] = {"input param is invalid", "operation timeout"};
 
-static esp_codec_dev_handle_t s_play_dev;
-static esp_codec_dev_handle_t s_record_dev;
+
+
 static bool s_play_opened;
 static bool s_record_opened;
 
@@ -52,7 +66,7 @@ int micBytes, udpBytes;
 extern const uint8_t music_pcm_start[] asm("_binary_canon_pcm_start");
 extern const uint8_t music_pcm_end[] asm("_binary_canon_pcm_end");
 
-int es8311_set_ADCvolume(const audio_codec_if_t *h, uint8_t val);
+
 
 #if CONFIG_EXAMPLE_BSP && CONFIG_IDF_TARGET_ESP32P4
 static esp_err_t p4_codec_set_fs(uint32_t rate, uint32_t bits_cfg, i2s_slot_mode_t ch) {
@@ -93,22 +107,25 @@ static esp_err_t p4_codec_volume_set(int volume) {
 	ESP_RETURN_ON_FALSE(s_play_dev, ESP_ERR_INVALID_STATE, TAG, "speaker codec is not initialized");
 	return esp_codec_dev_set_out_vol(s_play_dev, volume);
 }
-#endif
+
 
 static esp_err_t es8311_codec_init(void) {
 	s_play_dev = bsp_audio_codec_speaker_init();
 	ESP_RETURN_ON_FALSE(s_play_dev, ESP_FAIL, TAG, "init ESP32-P4 speaker codec failed");
 	s_record_dev = bsp_audio_codec_microphone_init();
 	ESP_RETURN_ON_FALSE(s_record_dev, ESP_FAIL, TAG, "init ESP32-P4 microphone codec failed");
-//	ESP_RETURN_ON_ERROR(p4_codec_set_fs(EXAMPLE_SAMPLE_RATE, 16, I2S_SLOT_MODE_STEREO), TAG, "set ESP32-P4 BSP codec format failed");
+	//	ESP_RETURN_ON_ERROR(p4_codec_set_fs(EXAMPLE_SAMPLE_RATE, 16, I2S_SLOT_MODE_STEREO), TAG, "set ESP32-P4 BSP codec format failed");
 	ESP_RETURN_ON_ERROR(p4_codec_set_fs(EXAMPLE_SAMPLE_RATE, 16, I2S_SLOT_MODE_MONO), TAG, "set ESP32-P4 BSP codec format failed");
-	
+
 	ESP_RETURN_ON_ERROR(p4_codec_volume_set(EXAMPLE_VOICE_VOLUME), TAG, "set ESP32-P4 BSP codec volume failed");
 	// audio_codec_if_t h = s_record_dev.
 	// es8311_set_ADCvolume(s_record_dev, 0xFF); // max
 
 	return ESP_OK;
 }
+#endif
+
+
 
 #include "math.h"
 void generateTestTone(void) {
@@ -140,12 +157,12 @@ void generateTestTone(void) {
 		sins = 0;
 	}
 }
-
+#ifndef S3BOARD
 static void sendMic(void *args) {
 	static int64_t last_packet_time_us;
 
 	uint16_t *mic_data = malloc(EXAMPLE_RECV_BUF_SIZE + 10);
-	uint16_t *mic_dataStereo = malloc(EXAMPLE_RECV_BUF_SIZE* 2  + 10);
+	uint16_t *mic_dataStereo = malloc(EXAMPLE_RECV_BUF_SIZE * 2 + 10);
 
 	if (!mic_data) {
 		ESP_LOGE(TAG, "[echo] No memory for read data buffer");
@@ -216,7 +233,6 @@ static void sendMic(void *args) {
 		// }
 		// printf( "\n\r");
 
-		
 		// uint16_t * p = mic_data;
 		// uint16_t * p2 = mic_dataStereo;
 		// for ( int m = 0; m < bytes_read/2 ; m++) {
@@ -225,8 +241,8 @@ static void sendMic(void *args) {
 		// 	p++;
 		// 	p2 += 2;
 		// }
-		
-		//res = xRingbufferSend(pcmBuffer, mic_dataStereo, bytes_read * 2, pdMS_TO_TICKS(1000));
+
+		// res = xRingbufferSend(pcmBuffer, mic_dataStereo, bytes_read * 2, pdMS_TO_TICKS(1000));
 		res = xRingbufferSend(pcmBuffer, mic_data, bytes_read, pdMS_TO_TICKS(1000));
 		if (res == false) {
 			ESP_LOGE(TAG, " fail sending ringbuffer");
@@ -244,7 +260,10 @@ static void sendMic(void *args) {
 	// ret = esp_codec_dev_write(s_play_dev, mic_data, EXAMPLE_RECV_BUF_SIZE);
 }
 
-static void sendMusic (void *args) {
+#endif
+
+
+static void sendMusic(void *args) {
 	esp_err_t ret = ESP_OK;
 	size_t bytes_write = 0;
 	uint8_t *dataPtr = (uint8_t *)music_pcm_start;
@@ -279,7 +298,7 @@ static void sendMusic (void *args) {
 			}
 		}
 		ESP_LOGE(TAG, "muxic send");
-		vTaskDelay(10000 / portTICK_PERIOD_MS);
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 	vTaskDelete(NULL);
 }
@@ -297,7 +316,9 @@ void timerTask(void *p) {
 
 void app_main(void) {
 	printf("start\n-----------------------------\n");
-
+#ifdef S3BOARD
+	initWifi();
+#else
 	initETH();
 
 	if (es8311_codec_init() != ESP_OK) {
@@ -307,6 +328,7 @@ void app_main(void) {
 		ESP_LOGI(TAG, "es8311 codec init success");
 	}
 
+#endif
 	pcmBuffer = xRingbufferCreate(RINGBUFSIZE, RINGBUF_TYPE_BYTEBUF);
 	if (pcmBuffer == NULL) {
 		printf("Failed to create ring buffer\n");
@@ -317,9 +339,9 @@ void app_main(void) {
 			vTaskDelay(100);
 		} while (!gotIP);
 
-		xTaskCreate(timerTask, "timer", 2000, NULL, 5, NULL);
-	//	xTaskCreate(sendmusic, "rtp_sender", 8192, NULL, 5, NULL);
+		xTaskCreate(timerTask, "timer", 4000, NULL, 5, NULL);
+		xTaskCreate(sendMusic, "sendMusic", 8192, NULL, 5, NULL);
 		// generateTestTone();
-		sendMic(NULL);
+		//	sendMic(NULL);
 	}
 }

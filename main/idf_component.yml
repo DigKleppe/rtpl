@@ -10,4 +10,4 @@ dependencies:
 
 
 
-  espressif/esp_media_protocols: ^1.0.3
+##  espressif/esp_media_protocols: ^1.0.3

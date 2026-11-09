@@ -20,12 +20,13 @@
     }
   },
   "idf.openOcdConfigs": [
-    "board/esp32p4-builtin.cfg"
+    "board/esp32s3-builtin.cfg"
   ],
   "idf.port": "/dev/ttyACM0",
   "idf.currentSetup": "/home/dig/.espressif/v5.5.4/esp-idf",
   "idf.customExtraVars": {
-    "IDF_TARGET": "esp32p4"
+    "IDF_TARGET": "esp32s3",
+    "OPENOCD_USB_ADAPTER_LOCATION": "1-4"
   },
   "C_Cpp.errorSquiggles": "disabled",
   "clangd.path": "/home/dig/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",

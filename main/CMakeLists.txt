@@ -3,7 +3,7 @@ idf_build_get_property(project_dir PROJECT_DIR)
 set(COMPONENT_SRCDIRS ".")                                       
 set(COMPONENT_ADD_INCLUDEDIRS "include")
 #set(COMPONENT_PRIV_REQUIRES  "main spiffs" "nvs_flash esp_event app_update esp_http_client esp_https_ota driver mbedtls esp_wifi wifiConnect spiffsOTA")
-set(COMPONENT_PRIV_REQUIRES esp_driver_i2s esp_driver_gpio esp_driver_i2c esp_codec_dev esp_event esp_netif esp_eth ethernet_init esp_ringbuf waveshare__p4_platformNOLCD sender)
+set(COMPONENT_PRIV_REQUIRES  esp_driver_gpio esp_event esp_ringbuf sender esp_timer esp_wifi nvs_flash )
 set (COMPONENT_EMBED_TXTFILES "canon.pcm")
 register_component()
 
