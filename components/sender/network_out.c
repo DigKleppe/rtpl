@@ -39,7 +39,7 @@ extern EventGroupHandle_t s_network_activity_event_group;
 extern RingbufHandle_t pcmBuffer;
 
 
-#define lifecycle_get_sender_destination_ip() "192.168.2.2" // PC
+#define lifecycle_get_sender_destination_ip() "192.168.2.255" // PC
 #define lifecycle_get_sender_destination_port() 5006  // test , 
 #define lifecycle_get_sample_rate() 16000 // 44100
 #define lifecycle_get_bit_depth() 16

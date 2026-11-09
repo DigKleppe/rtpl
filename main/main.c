@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 
+//ontvanger in testAudioRTP /mnt/linuxData/projecten/intercom
+
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
@@ -21,7 +23,7 @@
 #include "example_config.h"
 #include "network_out.h"
 
-#define RINGBUFSIZE 44100 * 4
+#define RINGBUFSIZE 44100
 
 #include "eth.h"
 #define CONFIG_EXAMPLE_BSP 1
