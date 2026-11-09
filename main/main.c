@@ -138,7 +138,7 @@ void generateTestTone(void) {
 
 	while (1) {
 		for (int n = 0; n < RINGBUFSIZE / 8; n++) {
-			sins += 2 * 1000.0 * (2 * M_PI) / EXAMPLE_SAMPLE_RATE;
+			sins += 0.5 * 1000.0 * (2 * M_PI) / EXAMPLE_SAMPLE_RATE;
 			audio32 = (int)(30000 * sin(sins));
 			//	xRingbufferSend(pcmBuffer, &audio, 2, pdMS_TO_TICKS(1000));
 			res = xRingbufferSend(pcmBuffer, &audio32, 4, pdMS_TO_TICKS(1000));
@@ -341,7 +341,7 @@ void app_main(void) {
 
 		xTaskCreate(timerTask, "timer", 4000, NULL, 5, NULL);
 		xTaskCreate(sendMusic, "sendMusic", 8192, NULL, 5, NULL);
-		// generateTestTone();
+	//	generateTestTone();
 		//	sendMic(NULL);
 	}
 }
