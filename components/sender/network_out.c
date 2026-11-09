@@ -16,7 +16,7 @@
 #include "lwip/sockets.h"
 #include "network_out.h"
 #include "rom/ets_sys.h"
-#include "wav_streamer.h"
+//#include "wav_streamer.h"
 #include <arpa/inet.h> // For htons, htonl, ntohs
 #include <config.h>
 #include <errno.h>
@@ -58,13 +58,6 @@ typedef struct __attribute__((packed)) {
 // Compile-time assertion to ensure RTP header is exactly 12 bytes
 _Static_assert(sizeof(rtp_header_t) == 12, "RTP header must be exactly 12 bytes");
 
-// SAP header structure
-typedef struct __attribute__((packed)) {
-	uint8_t flags;		  // V(3), A(1), R(1), T(1), E(1), C(1)
-	uint8_t auth_len;	  // Authentication length (usually 0)
-	uint16_t msg_id_hash; // Message ID hash
-	uint32_t origin_src;  // Originating source (IP address)
-} sap_header_t;
 
 // RTP constants
 #define RTP_VERSION 2
@@ -248,14 +241,14 @@ esp_err_t rtp_sender_init(void) {
 
 	s_is_sender_initialized = true;
 
-	uint32_t sample_rate = lifecycle_get_sample_rate();
-	uint8_t bit_depth = lifecycle_get_bit_depth();
-	uint8_t channels = 2;
+	// uint32_t sample_rate = lifecycle_get_sample_rate();
+	// uint8_t bit_depth = lifecycle_get_bit_depth();
+	// uint8_t channels = 2;
 
-	esp_err_t wav_err = wav_streamer_init(sample_rate, bit_depth, channels);
-	if (wav_err != ESP_OK) {
-		ESP_LOGW(TAG, "Failed to initialize WAV streamer: 0x%x", wav_err);
-	}
+	// // esp_err_t wav_err = wav_streamer_init(sample_rate, bit_depth, channels);
+	// // if (wav_err != ESP_OK) {
+	// // 	ESP_LOGW(TAG, "Failed to initialize WAV streamer: 0x%x", wav_err);
+	// // }
 
 	return ESP_OK;
 }
@@ -321,7 +314,7 @@ esp_err_t rtp_sender_stop(void) {
 	}
 
 	s_next_sap_announce_us = 0;
-	wav_streamer_deinit();
+//	wav_streamer_deinit();
 
 	return ESP_OK;
 }
